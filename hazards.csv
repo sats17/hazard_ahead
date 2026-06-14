@@ -2,11 +2,10 @@ id,type,latitude,longitude,name
 1,speedBreaker,17.536903, 74.945056,Speed Breaker A
 2,pothole,19.0765,72.8781,Pothole 1
 3,railwayCrossing,19.0772,72.8795,Crossing A
-4,speedBreaker,17.538278, 74.948277,Speed Breaker B
-5,pothole,19.0785,72.8805,Pothole 2
-6,railwayCrossing,19.0790,72.8810,Crossing
-7,speedBreaker,19.0795,72.8815,Speed Breaker C
-8,pothole,19.0800,72.8820,Pothole 3
-9,railwayCrossing,19.0805,72.8825,Crossing B
-10,speedBreaker,19.0810,72.8830,Speed Breaker
-11,pothole,19.0815,72.8835,Pothole 4
+4, speedBreaker,17.528001, 74.929622,dighanchi man river speed breaker
+5, speedBreaker,17.527827, 74.928005, dighanchi atpadi road village speed breaker
+7, speedBreaker,17.527624, 74.923580, dighanchi highschool speed breaker
+8, speedBreaker,17.527709, 74.921187, dighanchi mayani road speed breaker
+9, speedBreaker,17.528523, 74.911017, dighanchi mayani road speed breaker 1
+10, speedBreaker,17.528557, 74.911872, dighanchi mayani road speed breaker 2
+11, sharpCurve, 17.528836, 74.935734, dighanchi khavaspur road crossing sharp curve
