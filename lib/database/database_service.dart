@@ -1,6 +1,5 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../core/constants/hazard_type.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,9 +27,9 @@ class DatabaseService {
   }
 
   Future<Database> _initDB(String filePath) async {
-    // Get the device's exact location for saving permanent documents
-    final dbPath = await getApplicationDocumentsDirectory();
-    final path = join(dbPath.path, filePath);
+    // We use sqflite's native getDatabasesPath() instead of path_provider
+    final databasesPath = await getDatabasesPath();
+    final path = join(databasesPath, filePath);
 
     // Open or create the database
     return await openDatabase(

@@ -1,36 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'dart:io';
 
 // IMPORTANT: Ensure these paths match your actual project structure
-import 'core/constants/hazard_type.dart';
 import 'core/services/hazard_service.dart';
 import 'database/database_service.dart';
+import 'core/services/background_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize the background service before the UI boots up
+  await initializeBackgroundService();
+
   runApp(const ProviderScope(child: SpeedBreakerApp()));
 }
 
 class SpeedBreakerApp extends StatelessWidget {
   const SpeedBreakerApp({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SpeedBreaker Alert',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
-        useMaterial3: true,
-      ),
-      home: const DashboardScreen(),
-    );
-  }
+@override
+Widget build(BuildContext context) {
+  return MaterialApp(
+    title: 'SpeedBreaker Alert',
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
+      useMaterial3: true,
+    ),
+    home: const DashboardScreen(),
+  );
+}
 }
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -41,23 +45,23 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  // --- Services & Database State ---
+  // --- Services State ---
   late Future<int> _hazardCount;
   late HazardService hazardService;
 
-  // --- Location & Alert State ---
-  Position? _currentPosition;
-  StreamSubscription<Position>? _positionStreamSubscription;
-  String _locationStatus = 'Checking permissions...';
-
-  Hazard? _nearestHazard;
+  // --- UI State ---
+  double? _currentLat;
+  double? _currentLon;
+  double _currentSpeed = 0.0;
+  String? _nearestHazardName;
   double? _distanceToNearest;
   bool _isDangerZone = false;
 
-  // --- Voice Engine State ---
-  final FlutterTts _flutterTts = FlutterTts();
-  bool _isTtsInitialized = false;
-  int? _lastAlertedHazardId; // Memory cache to prevent repeating alerts
+  bool _isServiceRunning = false;
+  String _locationStatus = 'Checking permissions...';
+
+  // UI-Level GPS Stream
+  StreamSubscription<Position>? _livePositionStream;
 
   @override
   void initState() {
@@ -66,61 +70,87 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     _hazardCount = dbService.getHazardCount();
     hazardService = ref.read(hazardServiceProvider);
 
-    _initTts();
-    _startLocationTracking();
+    _checkPermissions();
+    _listenToBackgroundService();
+    _checkServiceStatus();
+
+    // Auto-sync from GitHub every time the app opens
+    _syncDatabaseFromCloud();
   }
 
-  // --- 1. TTS INITIALIZATION ---
-  Future<void> _initTts() async {
-    await _flutterTts.setLanguage("en-IN");
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.setVolume(1.0);
-    await _flutterTts.setPitch(1.0);
-
-    await _flutterTts.setIosAudioCategory(
-      IosTextToSpeechAudioCategory.playback,
-      [IosTextToSpeechAudioCategoryOptions.mixWithOthers],
-    );
-
-    setState(() {
-      _isTtsInitialized = true;
-    });
+  @override
+  void dispose() {
+    _livePositionStream?.cancel();
+    super.dispose();
   }
 
-  // --- 2. VOICE ALERT TRIGGER ---
-  Future<void> _triggerHardwareAlert(String hazardName) async {
-    if (_isTtsInitialized) {
-      await _flutterTts.speak("Caution, $hazardName ahead");
+  // --- CLOUD SYNC DATABASE ---
+  Future<void> _syncDatabaseFromCloud() async {
+    const String cloudCsvUrl = 'https://gist.githubusercontent.com/sats17/6c25f34c5a25ffcc6b2f162f3b32017b/raw';
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Syncing hazards from cloud...')),
+        );
+      }
+
+      final response = await http.get(Uri.parse(cloudCsvUrl));
+
+      if (response.statusCode == 200) {
+        String csvString = response.body.replaceAll('\r\n', '\n');
+
+        List<List<dynamic>> csvTable = const CsvToListConverter(
+          eol: '\n',
+          shouldParseNumbers: true,
+        ).convert(csvString);
+
+        await hazardService.processCsvData(csvTable);
+
+        if (mounted) {
+          setState(() {
+            final dbService = ref.read(databaseServiceProvider);
+            _hazardCount = dbService.getHazardCount();
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cloud Sync Successful!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to download. Server returned: ${response.statusCode}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
-  // --- 3. MATH HELPER: BEARING/DIRECTION ---
-  bool _isHazardInFront(double userHeading, double bearingToHazard, {double toleranceDegrees = 45.0}) {
-    if (userHeading < 0) return true; // Safe fallback if moving too slow
-
-    double diff = (bearingToHazard - userHeading).abs();
-
-    // Handle compass wrap-around (e.g., heading 350, bearing 10)
-    if (diff > 180.0) {
-      diff = 360.0 - diff;
-    }
-
-    return diff <= toleranceDegrees;
-  }
-
-  // --- 4. MASTER GPS STREAM ---
-  Future<void> _startLocationTracking() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    // Check Permissions
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  // --- 1. INITIAL PERMISSIONS & DIAGNOSTIC POSITION SEEDING ---
+  Future<void> _checkPermissions() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       setState(() => _locationStatus = 'Location services disabled.');
       return;
     }
 
-    permission = await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
@@ -134,85 +164,117 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       return;
     }
 
-    setState(() => _locationStatus = 'Tracking active');
+    setState(() => _locationStatus = 'Connecting to location framework...');
 
-    // Start Streaming (Updates every 5 meters)
-    LocationSettings locationSettings = const LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5,
-    );
-
-    _positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen((Position? position) async {
-      if (position == null) return;
-
-      final dbService = ref.read(databaseServiceProvider);
-
-      // A. Get Bounding Box Hazards (~500m area)
-      final nearbyHazards = await dbService.getNearbyHazards(
-        position.latitude,
-        position.longitude,
+    try {
+      // Switched to standard LocationSettings to leverage the Fused Provider pipeline
+      Position initialPosition = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
       );
 
-      Hazard? closest;
-      double minDistance = double.infinity;
-      double currentHeading = position.heading;
-
-      // B. Filter by Direction & Calculate Exact Distance
-      for (var hazard in nearbyHazards) {
-        double distanceInMeters = Geolocator.distanceBetween(
-          position.latitude, position.longitude,
-          hazard.latitude, hazard.longitude,
+      if (mounted) {
+        setState(() {
+          _currentLat = initialPosition.latitude;
+          _currentLon = initialPosition.longitude;
+          _currentSpeed = initialPosition.speed;
+          _locationStatus = 'Ready to start driving.';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Startup Location Error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
         );
+        setState(() => _locationStatus = 'Initial Fix Failed. Watching stream...');
+      }
+    }
 
-        double bearingToHazard = Geolocator.bearingBetween(
-          position.latitude, position.longitude,
-          hazard.latitude, hazard.longitude,
-        );
-
-        if (_isHazardInFront(currentHeading, bearingToHazard)) {
-          if (distanceInMeters < minDistance) {
-            minDistance = distanceInMeters;
-            closest = hazard;
-          }
+    // Connect the live Fused stream pipeline
+    _livePositionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 1,
+      ),
+    ).listen(
+          (Position position) {
+        if (mounted) {
+          setState(() {
+            _currentLat = position.latitude;
+            _currentLon = position.longitude;
+            _currentSpeed = position.speed;
+            _locationStatus = 'Tracking active.';
+          });
         }
-      }
-
-      // C. Calculate Dynamic Speed Threshold
-      double currentSpeedMps = position.speed > 0 ? position.speed : 0.0;
-      // 6-second warning, clamped safely between 50m and 200m
-      double dynamicAlertDistance = (currentSpeedMps * 6.0).clamp(50.0, 200.0);
-
-      bool isApproachingFast = closest != null && minDistance <= dynamicAlertDistance;
-
-      // D. Smart Voice Trigger
-      if (isApproachingFast && closest != null) {
-        if (_lastAlertedHazardId != closest.id) {
-          _triggerHardwareAlert(closest.name);
-          _lastAlertedHazardId = closest.id;   // Cache the ID to prevent spam
+      },
+      onError: (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Live Stream Error: $error'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 15),
+            ),
+          );
+          setState(() {
+            _locationStatus = 'Stream Error: $error';
+            _currentLat = null;
+            _currentLon = null;
+            _currentSpeed = 0.0;
+          });
+          debugPrint("GPS Stream Error: $error");
         }
-      }
+      },
+    );
+  }
 
-      // Clear memory cache if we drive far enough away
-      if (closest == null || minDistance > 300) {
-        _lastAlertedHazardId = null;
+  // --- 2. BACKGROUND SERVICE COMMUNICATION ---
+  void _listenToBackgroundService() {
+    FlutterBackgroundService().on('updateUI').listen((event) {
+      if (event != null && mounted) {
+        setState(() {
+          _nearestHazardName = event['hazardName'];
+          _distanceToNearest = event['distance'];
+          _isDangerZone = event['isDanger'] ?? false;
+        });
       }
-
-      // E. Update State / UI
-      setState(() {
-        _currentPosition = position;
-        _nearestHazard = closest;
-        _distanceToNearest = closest != null ? minDistance : null;
-        _isDangerZone = isApproachingFast;
-      });
     });
   }
 
-  @override
-  void dispose() {
-    _positionStreamSubscription?.cancel();
-    super.dispose();
+  Future<void> _checkServiceStatus() async {
+    final isRunning = await FlutterBackgroundService().isRunning();
+    setState(() {
+      _isServiceRunning = isRunning;
+      if (isRunning) _locationStatus = 'Tracking active in background';
+    });
+  }
+
+  void _toggleDriveMode() async {
+    final service = FlutterBackgroundService();
+    var isRunning = await service.isRunning();
+
+    if (isRunning) {
+      service.invoke("stopService");
+      setState(() {
+        _isServiceRunning = false;
+        _locationStatus = 'Tracking stopped.';
+        _nearestHazardName = null;
+        _distanceToNearest = null;
+        _isDangerZone = false;
+      });
+    } else {
+      service.startService();
+      setState(() {
+        _isServiceRunning = true;
+        _locationStatus = 'Tracking active in background...';
+      });
+    }
   }
 
   @override
@@ -240,15 +302,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         children: [
                           const Icon(Icons.storage, size: 64, color: Colors.grey),
                           const SizedBox(height: 8),
-                          Text(
-                            'Hazards in Database:',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
+                          Text('Hazards in Database:', style: Theme.of(context).textTheme.titleLarge),
                           Text(
                             '${snapshot.data}',
                             style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                              color: Colors.deepOrange,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.deepOrange, fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
@@ -271,9 +329,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         Text(_locationStatus, style: const TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         Text(
-                          _currentPosition != null
-                              ? 'Lat: ${_currentPosition!.latitude.toStringAsFixed(5)}\nLon: ${_currentPosition!.longitude.toStringAsFixed(5)}\nSpeed: ${(_currentPosition!.speed * 3.6).toStringAsFixed(1)} km/h'
-                              : 'Waiting for GPS signal...',
+                          _currentLat != null
+                              ? 'Lat: ${_currentLat!.toStringAsFixed(5)}\nLon: ${_currentLon!.toStringAsFixed(5)}\nSpeed: ${(_currentSpeed * 3.6).toStringAsFixed(1)} km/h'
+                              : 'Acquiring GPS Signal wait...',
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 16, fontFamily: 'monospace'),
                         ),
@@ -308,8 +366,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _nearestHazard != null && _distanceToNearest != null
-                              ? '${_nearestHazard!.name}\nDistance: ${_distanceToNearest!.toStringAsFixed(0)}m'
+                          _nearestHazardName != null && _distanceToNearest != null
+                              ? '$_nearestHazardName\nDistance: ${_distanceToNearest!.toStringAsFixed(0)}m'
                               : 'No hazards in path',
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 16),
@@ -328,41 +386,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               FloatingActionButton.extended(
-                heroTag: "btn_test",
-                icon: const Icon(Icons.volume_up),
-                label: const Text('Test Voice'),
-                backgroundColor: Colors.red.shade100,
-                onPressed: () => _triggerHardwareAlert("Speed Breaker"),
+                heroTag: "btn_drive",
+                icon: Icon(_isServiceRunning ? Icons.stop : Icons.play_arrow),
+                label: Text(_isServiceRunning ? 'Stop Drive' : 'Start Drive'),
+                backgroundColor: _isServiceRunning ? Colors.red.shade200 : Colors.green.shade200,
+                onPressed: _toggleDriveMode,
               ),
-
               const SizedBox(height: 16),
-
               FloatingActionButton.extended(
-                heroTag: "btn_csv",
-                icon: const Icon(Icons.upload_file),
-                label: const Text('Import CSV'),
-                onPressed: () async {
-                  FilePickerResult? result = await FilePicker.platform.pickFiles(
-                    type: FileType.any,
-                  );
-
-                  if (result != null && result.files.single.path != null) {
-                    File file = File(result.files.single.path!);
-                    final csvString = await file.readAsString();
-
-                    List<List<dynamic>> csvTable = const CsvToListConverter(
-                      eol: '\n',
-                      shouldParseNumbers: true,
-                    ).convert(csvString);
-
-                    await hazardService.processCsvData(csvTable);
-
-                    setState(() {
-                      final dbService = ref.read(databaseServiceProvider);
-                      _hazardCount = dbService.getHazardCount();
-                    });
-                  }
-                },
+                heroTag: "btn_sync",
+                icon: const Icon(Icons.cloud_download),
+                label: const Text('Sync Cloud Data'),
+                onPressed: _syncDatabaseFromCloud,
               )
             ]
         )
