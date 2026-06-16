@@ -3,6 +3,8 @@ enum HazardType {
   pothole,
   railwayCrossing,
   schoolZone,
+  village,
+  forest,
   sharpCurve;
 
   // Converts database string back to our concrete Enum
