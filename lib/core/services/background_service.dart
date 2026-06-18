@@ -8,10 +8,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../../database/database_service.dart';
 import '../constants/hazard_type.dart';
 
-// IMPORTANT: Import your actual files here
-// import '../../database/database_service.dart';
-// import '../models/hazard.dart';
-
 // --- 1. INITIALIZE THE SERVICE ---
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
@@ -121,7 +117,7 @@ void onStart(ServiceInstance service) async {
 
     // C. Trigger Logic
     double speedMps = position.speed > 0 ? position.speed : 0.0;
-    double alertDistance = (speedMps * 6.0).clamp(50.0, 200.0);
+    double alertDistance = (speedMps * 12.0).clamp(100.0, 500.0);
     bool isDanger = closest != null && minDistance <= alertDistance;
 
     if (isDanger && closest != null) {
