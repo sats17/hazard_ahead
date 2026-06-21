@@ -19,21 +19,18 @@ class HazardService {
       // Skip the header row if it exists
       if (isFirstRow) {
         isFirstRow = false;
-        if (row.isNotEmpty && row[0].toString().toLowerCase() == 'id') {
+        if (row.isNotEmpty && row[0].toString().toLowerCase() == 'type') {
           continue;
         }
       }
 
       try {
-        // Validate length based on your 5-column format
-        if (row.length < 5) throw Exception('Invalid row length');
 
         // 1. Map columns to their specific indices
-        int id = int.parse(row[0].toString());
-        String typeString = row[1].toString().trim();
-        double lat = double.parse(row[2].toString());
-        double lon = double.parse(row[3].toString());
-        String name = row[4].toString().trim();
+        String typeString = row[0].toString().trim();
+        double lat = double.parse(row[1].toString());
+        double lon = double.parse(row[2].toString());
+        String name = row[3].toString().trim();
 
         // 2. Validate Enum mapping
         HazardType type = HazardType.values.firstWhere(
@@ -43,7 +40,6 @@ class HazardService {
 
         // 3. Create the Hazard object
         validHazards.add(Hazard(
-            id: id,
             type: type,
             latitude: lat,
             longitude: lon,

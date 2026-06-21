@@ -47,7 +47,8 @@ class DatabaseService {
         type TEXT NOT NULL,
         name TEXT NOT NULL,
         latitude REAL NOT NULL,
-        longitude REAL NOT NULL
+        longitude REAL NOT NULL,
+        UNIQUE(latitude, longitude) ON CONFLICT REPLACE
       )
     ''');
   }

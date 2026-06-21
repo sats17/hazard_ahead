@@ -85,8 +85,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   // --- CLOUD SYNC DATABASE ---
+// Replace the existing _syncDatabaseFromCloud method with this version:
   Future<void> _syncDatabaseFromCloud() async {
-    const String cloudCsvUrl = 'https://gist.githubusercontent.com/sats17/6c25f34c5a25ffcc6b2f162f3b32017b/raw';
+    const List<String> cloudCsvUrls = [
+      'https://gist.githubusercontent.com/sats17/7d55b4913b91bf0ccd75c3ddf72ee017/raw/436a7c6a9afba8c5371c153a543b830385675f9f/other_hazards.csv',
+      'https://gist.githubusercontent.com/sats17/7d55b4913b91bf0ccd75c3ddf72ee017/raw/436a7c6a9afba8c5371c153a543b830385675f9f/villages.csv'
+    ];
+
+    if (cloudCsvUrls.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No cloud CSV URLs configured.')),
+        );
+      }
+      return;
+    }
 
     try {
       if (mounted) {
@@ -95,41 +108,62 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         );
       }
 
-      final response = await http.get(Uri.parse(cloudCsvUrl));
+      int successCount = 0;
+      final List<String> failedUrls = [];
 
-      if (response.statusCode == 200) {
-        String csvString = response.body.replaceAll('\r\n', '\n');
+      for (final url in cloudCsvUrls) {
+        try {
+          final response = await http.get(Uri.parse(url));
 
-        List<List<dynamic>> csvTable = const CsvToListConverter(
-          eol: '\n',
-          shouldParseNumbers: true,
-        ).convert(csvString);
+          if (response.statusCode == 200) {
+            // Normalize line endings and strip BOM if present
+            String csvString = response.body.replaceAll('\r\n', '\n').replaceFirst('\uFEFF', '');
 
-        await hazardService.processCsvData(csvTable);
+            List<List<dynamic>> csvTable = const CsvToListConverter(
+              eol: '\n',
+              shouldParseNumbers: true,
+            ).convert(csvString);
 
-        if (mounted) {
-          setState(() {
-            final dbService = ref.read(databaseServiceProvider);
-            _hazardCount = dbService.getHazardCount();
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cloud Sync Successful!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to download. Server returned: ${response.statusCode}'),
-              backgroundColor: Colors.red,
-            ),
-          );
+            // Keep business logic same: processCsvData handles validation & insert.
+            await hazardService.processCsvData(csvTable);
+
+            successCount++;
+          } else {
+            failedUrls.add('$url (status ${response.statusCode})');
+          }
+        } catch (e) {
+          // Log and continue with next URL
+          debugPrint('Cloud sync error for $url: $e');
+          failedUrls.add('$url (error: $e)');
         }
       }
+
+      // Update local hazard count after processing all CSVs
+      if (mounted) {
+        setState(() {
+          final dbService = ref.read(databaseServiceProvider);
+          _hazardCount = dbService.getHazardCount();
+        });
+      }
+
+      // Show a concise summary SnackBar
+      if (mounted) {
+        final summary = StringBuffer();
+        summary.writeln('Cloud Sync finished: $successCount succeeded.');
+        if (failedUrls.isNotEmpty) {
+          summary.writeln('${failedUrls.length} failed.');
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(summary.toString()),
+            backgroundColor: failedUrls.isEmpty ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } catch (e) {
+      debugPrint('Overall cloud sync error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
