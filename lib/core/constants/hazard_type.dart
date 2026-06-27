@@ -22,6 +22,7 @@ class Hazard {
   final String name;
   final double latitude;
   final double longitude;
+  final double? heading;
 
   Hazard({
     this.id,
@@ -29,6 +30,7 @@ class Hazard {
     required this.name,
     required this.latitude,
     required this.longitude,
+    this.heading
   });
 
   // Convert Hazard object into a Map for SQLite insertion
@@ -39,6 +41,7 @@ class Hazard {
       'name': name,
       'latitude': latitude,
       'longitude': longitude,
+      'heading': heading
     };
   }
 
@@ -50,6 +53,7 @@ class Hazard {
       name: map['name'] as String,
       latitude: map['latitude'] as double,
       longitude: map['longitude'] as double,
+      heading: map['heading'] as double?
     );
   }
 }

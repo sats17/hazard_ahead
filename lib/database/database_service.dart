@@ -48,6 +48,7 @@ class DatabaseService {
         name TEXT NOT NULL,
         latitude REAL NOT NULL,
         longitude REAL NOT NULL,
+        heading REAL,
         UNIQUE(latitude, longitude) ON CONFLICT REPLACE
       )
     ''');
@@ -99,6 +100,7 @@ class DatabaseService {
         latitude: maps[i]['latitude'],
         longitude: maps[i]['longitude'],
         name: maps[i]['name'],
+        heading: maps[i]['heading'] != null ? maps[i]['heading'] as double : null
       );
     });
   }
@@ -111,7 +113,7 @@ class DatabaseService {
 
     print('--- DATABASE CONTENTS (${maps.length} rows) ---');
     for (var row in maps) {
-      print('ID: ${row['id']}, Type: ${row['type']}, Lat: ${row['latitude']}, Lon: ${row['longitude']}, Name: ${row['name']}');
+      print('ID: ${row['id']}, Type: ${row['type']}, Lat: ${row['latitude']}, Lon: ${row['longitude']}, Heading: ${row['heading']}, Name: ${row['name']}');
     }
     print('-------------------------------------------');
   }

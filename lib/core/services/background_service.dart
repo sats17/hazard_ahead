@@ -81,6 +81,16 @@ void onStart(ServiceInstance service) async {
     return diff <= 45.0; // 45 degree tolerance
   }
 
+  bool isHazardWithCorrectHeading(double userHeading, double? hazardHeading) {
+    if (hazardHeading == null) return true; // If hazard has no heading, assume it's valid
+    double diff = (hazardHeading - userHeading).abs();
+    // Handle the compass wrap-around (e.g., 359 to 6)
+    if (diff > 180.0) {
+      diff = 360.0 - diff;
+    }
+    return diff <= 15.0; // 15 degree tolerance
+  }
+
   // 5. Start GPS Stream
   Geolocator.getPositionStream(
     locationSettings: const LocationSettings(
@@ -107,8 +117,9 @@ void onStart(ServiceInstance service) async {
         hazard.latitude, hazard.longitude,
       );
 
-      if (isHazardInFront(position.heading, bearing)) {
+      if (isHazardInFront(position.heading, bearing) && isHazardWithCorrectHeading(position.heading, hazard.heading)) {
         if (distance < minDistance) {
+          print(position.heading);
           minDistance = distance;
           closest = hazard;
         }
@@ -117,11 +128,23 @@ void onStart(ServiceInstance service) async {
 
     // C. Trigger Logic
     double speedMps = position.speed > 0 ? position.speed : 0.0;
-    double alertDistance = (speedMps * 12.0).clamp(100.0, 500.0);
+    double speedKmh = speedMps * 3.6;
+    double alertDistance;
+
+    // If driving 40 km/h or faster, look 500 meters ahead
+    if (speedKmh >= 45.0) {
+      alertDistance = 500.0;
+    }
+    // If driving under 40 km/h, use the standard 12-second window (clamped to 100m min)
+    else {
+      alertDistance = (speedMps * 12.0).clamp(100.0, 500.0);
+    }
     bool isDanger = closest != null && minDistance <= alertDistance;
 
     if (isDanger && closest != null) {
+
       if (lastAlertedHazardId != closest.id) {
+        print("Caution, ${closest.name} ahead and ${closest.heading}");
         await flutterTts.speak("Caution, ${closest.name} ahead");
         lastAlertedHazardId = closest.id;
       }
@@ -136,6 +159,7 @@ void onStart(ServiceInstance service) async {
       'lat': position.latitude,
       'lon': position.longitude,
       'speed': position.speed,
+      'heading': position.heading,
       'hazardName': closest?.name,
       'distance': minDistance == double.infinity ? null : minDistance,
       'isDanger': isDanger,

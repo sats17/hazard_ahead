@@ -26,11 +26,17 @@ class HazardService {
 
       try {
 
-        // 1. Map columns to their specific indices
+        // 1. Fixed csv columns to match the Hazard model
         String typeString = row[0].toString().trim();
         double lat = double.parse(row[1].toString());
         double lon = double.parse(row[2].toString());
         String name = row[3].toString().trim();
+        double? heading;
+
+        // Optional heading column
+        if (row.length > 4 && row[4] != null) {
+          heading = double.parse(row[4].toString());
+        }
 
         // 2. Validate Enum mapping
         HazardType type = HazardType.values.firstWhere(
@@ -43,7 +49,8 @@ class HazardService {
             type: type,
             latitude: lat,
             longitude: lon,
-            name: name
+            name: name,
+            heading: heading
         ));
 
       } catch (e) {

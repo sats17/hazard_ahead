@@ -53,6 +53,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   double? _currentLat;
   double? _currentLon;
   double _currentSpeed = 0.0;
+  double? _currentHeading;
   String? _nearestHazardName;
   double? _distanceToNearest;
   bool _isDangerZone = false;
@@ -214,6 +215,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           _currentLat = initialPosition.latitude;
           _currentLon = initialPosition.longitude;
           _currentSpeed = initialPosition.speed;
+          _currentHeading = initialPosition.heading;
           _locationStatus = 'Ready to start driving.';
         });
       }
@@ -243,6 +245,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             _currentLat = position.latitude;
             _currentLon = position.longitude;
             _currentSpeed = position.speed;
+            _currentHeading = position.heading;
             _locationStatus = 'Tracking active.';
           });
         }
@@ -261,6 +264,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             _currentLat = null;
             _currentLon = null;
             _currentSpeed = 0.0;
+            _currentHeading = null;
           });
           debugPrint("GPS Stream Error: $error");
         }
@@ -364,7 +368,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         const SizedBox(height: 8),
                         Text(
                           _currentLat != null
-                              ? 'Lat: ${_currentLat!.toStringAsFixed(5)}\nLon: ${_currentLon!.toStringAsFixed(5)}\nSpeed: ${(_currentSpeed * 3.6).toStringAsFixed(1)} km/h'
+                              ? 'Lat: ${_currentLat!.toStringAsFixed(5)}\nLon: ${_currentLon!.toStringAsFixed(5)}\nSpeed: ${(_currentSpeed * 3.6).toStringAsFixed(1)} km/h\nHeading: ${_currentHeading?.toStringAsFixed(1) ?? 'N/A'}°'
                               : 'Acquiring GPS Signal wait...',
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 16, fontFamily: 'monospace'),
