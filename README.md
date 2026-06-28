@@ -8,8 +8,13 @@ please feel free to raise a PR.
 ## Getting Started
 
 flutter clean
+
 flutter pub get
+
 flutter build apk --release
+
 flutter build apk --debug
 
 locate apk under build\app\outputs\flutter-apk\app-debug.apk
+
+And install it on your phone.
