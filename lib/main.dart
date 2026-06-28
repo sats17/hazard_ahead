@@ -89,7 +89,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 // Replace the existing _syncDatabaseFromCloud method with this version:
   Future<void> _syncDatabaseFromCloud() async {
     const List<String> cloudCsvUrls = [
-      'https://gist.githubusercontent.com/sats17/7d55b4913b91bf0ccd75c3ddf72ee017/raw/436a7c6a9afba8c5371c153a543b830385675f9f/other_hazards.csv',
+      'https://gist.githubusercontent.com/sats17/7d55b4913b91bf0ccd75c3ddf72ee017/raw/4cf78179cce2371d82f89cd33cecf9549a43c0cd/other_hazards.csv',
       'https://gist.githubusercontent.com/sats17/7d55b4913b91bf0ccd75c3ddf72ee017/raw/436a7c6a9afba8c5371c153a543b830385675f9f/villages.csv'
     ];
 

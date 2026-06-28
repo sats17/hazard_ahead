@@ -108,6 +108,7 @@ void onStart(ServiceInstance service) async {
 
     // B. Calculate Distance & Direction
     for (var hazard in nearbyHazards) {
+      print("Hazard: ${hazard.name}, Lat: ${hazard.latitude}, Lon: ${hazard.longitude}, Heading: ${hazard.heading}");
       double distance = Geolocator.distanceBetween(
         position.latitude, position.longitude,
         hazard.latitude, hazard.longitude,
@@ -132,7 +133,7 @@ void onStart(ServiceInstance service) async {
     double alertDistance;
 
     // If driving 40 km/h or faster, look 500 meters ahead
-    if (speedKmh >= 45.0) {
+    if (speedKmh >= 60.0) {
       alertDistance = 500.0;
     }
     // If driving under 40 km/h, use the standard 12-second window (clamped to 100m min)
@@ -144,8 +145,7 @@ void onStart(ServiceInstance service) async {
     if (isDanger && closest != null) {
 
       if (lastAlertedHazardId != closest.id) {
-        print("Caution, ${closest.name} ahead and ${closest.heading}");
-        await flutterTts.speak("Caution, ${closest.name} ahead");
+        await flutterTts.speak("Caution, ${closest.name} ahead, ${minDistance.toStringAsFixed(0)} meters away.");
         lastAlertedHazardId = closest.id;
       }
     }

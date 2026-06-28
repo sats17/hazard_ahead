@@ -32,7 +32,6 @@ class HazardService {
         double lon = double.parse(row[2].toString());
         String name = row[3].toString().trim();
         double? heading;
-
         // Optional heading column
         if (row.length > 4 && row[4] != null) {
           heading = double.parse(row[4].toString());
