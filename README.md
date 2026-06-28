@@ -1,6 +1,8 @@
 # hazard_ahead
 
 A Flutter app that alerts drivers to nearby road hazards using GPS, SQLite, and Text-to-Speech. 
+This app I created to solve the problem that I faced and not tested thoroughly. However, if you found any issues or have any suggestions, 
+please feel free to raise a PR.
 
 ## Getting Started
 
